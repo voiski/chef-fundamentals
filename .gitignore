@@ -58,3 +58,4 @@ node/.vagrant
 # Chef project
 chef-repo/.chef/syntaxcache
 chef-repo/.chef/*.pem
+chef-repo/*.gz

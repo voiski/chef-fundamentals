@@ -13,7 +13,18 @@ This training is about the basics of the chef. Considering the bellow inputs:
 
 ## Steps
 
-
+- [1st Creating the project](#1st-creating-the-project)
+- [2nd Registering the node on chef](#2nd-registering-the-node-on-chef)
+- [3rd Creating and applying the first cookbook](#3rd-creating-and-applying-the-first-cookbook)
+- [4th Listing the result](#4th-listing-the-result)
+- [5ft Using attributes](#5ft-using-attributes)
+- [6th Creating new cookbooks](#6th-creating-new-cookbooks)
+- [7th Notifications](#7th-notifications)
+- [8th Queries](#8th-queries)
+- [10th Role-based Attributes and Merge Order Precedence](#10th-role-based-attributes-and-merge-order-precedence)
+- [11th Environments](#11th-environments)
+- [12th Chef Supermarket](#12th-chef-supermarket)
+- [13th Working chef](#13th-working-chef)
 
 
 ### 1st Creating the project
@@ -22,7 +33,18 @@ This training is about the basics of the chef. Considering the bellow inputs:
 - **node** :stew: vagrant up --provider virtualbox
 - **node** :stew: [manual] Change Vagrantfile to use the given ip/mask and to be public
 
-> config.vm.network "public_network", ip: "[ip]", netmask: "[mask]"
+```ruby
+  config.vm.network "public_network", ip: "[ip]", netmask: "[mask]"
+```
+
+- **node** :stew: [manual] Change Vagrantfile to disable selinux, it will avoid problems with ports
+
+```ruby
+  config.vm.provision "shell", inline: <<-SHELL
+    sudo setenforce 0
+    sudo sed -i 's/SELINUX=\(enforcing\|permissive\)/SELINUX=disabled/g' /etc/selinux/config
+  SHELL
+```
 
 - **chef** :hocho: [manual] Create a account at [chef.io](https://manage.chef.io/login)
 - **chef** :hocho: [manual] Download the skeleton project
@@ -46,7 +68,7 @@ This training is about the basics of the chef. Considering the bellow inputs:
 
 ### 3rd Creating and applying the first cookbook
 
-- **node** :stew: [inside node as root] echo 'log_level :info' >> /etc/chef/client.rb
+- **node** :stew: vagrant ssh -c "sudo sed -i '$ a log_level :info' /etc/chef/client.rb"
 - **chef** :hocho: knife cookbook create apache
 - **chef** :hocho: [manual] Edit *apache/recipes/default.rb*
 
@@ -234,7 +256,7 @@ end
 - **chef** :hocho: knife cookbook upload apache
 - **node** :stew: vagrant ssh -c "sudo chef-client"
 
-> Then check the result on the browser: http://[ip]/
+> Then check the result on the browser: http://[ip]:80/ and http://[ip]:81/
 
 
 
@@ -347,8 +369,175 @@ end
 
 ### 10th Role-based Attributes and Merge Order Precedence
 
+- **node** :stew: vagrant ssh -c "setenforce 0;sed -i 's/SELINUX=\(enforcing\|permissive\)/SELINUX=disabled/g' /etc/selinux/config"
+
+> I updated the [1st part](1st-creating-the-project), you can put this command on the vagrantfile to avoid do it manual and also to avoid problems if you need to recreate the node from scratch
+
+- **node** :stew: vagrant reload
+- **chef** :hocho: [manual] Create new role file *roles/webserver.rb*
+
+```ruby
+name 'webserver'
+description 'web Server'
+run_list 'recipe[apache]'
+default_attributes({
+                     apache: {
+                       sites: {
+                         admin: {
+                           port: 8000
+                         },
+                         bears: {
+                           port: 8001
+                         }
+                       }
+                     }
+})
+```
+
+- **chef** :hocho: knife role from file webserver.rb
+- **chef** :hocho: knife role show webserver
+- **chef** :hocho: [manual] Go on the [manager server](https://api.chef.io) at **Nodes** > **Edit Run List**
+- **chef** :hocho: [manual] Drag `webserver` to the run list and remove the `apache`
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+
+> Then check the result on the browser: http://[ip]:8000/ and http://[ip]:8001/
+
+- **chef** :hocho: [manual] Create new role file *roles/base.rb*
+
+```ruby
+name 'base'
+description 'Base Server Role'
+run_list 'recipe[motd]', 'recipe[users]'
+```
+
+- **chef** :hocho: knife role from file base.rb
+- **chef** :hocho: [manual] Edit *roles/webserver.rb*
+
+```ruby
+...
+run_list 'role[base]','recipe[apache]'
+...
+```
+
+- **chef** :hocho: knife role from file webserver.rb
+- **chef** :hocho: knife node run_list remove node1 "recipe[motd]"
+- **chef** :hocho: knife node run_list remove node1 "recipe[users]"
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+
+> Then check the result on the browser: http://[ip]:8000/ and http://[ip]:8001/
 
 
+
+
+### 11th Environments
+
+- **chef** :hocho: mkdir environments
+- **chef** :hocho: [manual] Create the environment file *environments/dev.rb*
+
+```ruby
+name 'dev'
+description 'For developers!'
+cookbook 'apache', '= 0.2.0'
+```
+
+- **chef** :hocho: knife environment from file dev.rb
+- **chef** :hocho: knife environment show dev
+- **chef** :hocho: [manual] Go on the [manager server](https://api.chef.io) at **Nodes**
+- **chef** :hocho: [manual] Change the enviroment of the node1 to use `dev`
+- **chef** :hocho: [manual] Create the environment file *environments/production.rb*
+
+```ruby
+name 'production'
+description 'For prods!'
+cookbook 'apache', '= 0.1.0'
+override_attributes({
+  pci: {
+    in_scope: true
+  }
+})
+```
+
+- **chef** :hocho: knife environment from file production.rb
+- **chef** :hocho: knife node environment_set node1 production
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+
+
+
+
+### 12th Chef Supermarket
+
+- **chef** :hocho: [manual] Go to [supermarket](https://supermarket.chef.io/)
+- **chef** :hocho: [manual] Search `chef-client`
+
+> You will see all the information about this cookbook and others
+
+- **chef** :hocho: knife cookbook site search chef-client
+- **chef** :hocho: knife cookbook site show chef-client
+
+> Like the browser, a command way to search for new cookbooks
+
+- **chef** :hocho: knife cookbook site download chef-client
+- **chef** :hocho: tar -zxvf chef-client*.tar.gz -C cookbooks
+- **chef** :hocho: [manual] Check the file *chef-client/recipes/delete_validation.rb*
+- **chef** :hocho: [manual] Edit the role *roles/base.rb*
+
+```ruby
+...
+run_list "recipe[chef-client::delete_validation]", "recipe[motd]", "recipe[users]"
+```
+
+- **chef** :hocho: knife role from file base.rb
+- **chef** :hocho: [manual] Check the file *chef-client/recipes/default.rb*
+
+> This class is just the default call and will delegate to the service recipe
+
+- **chef** :hocho: [manual] Check the file *chef-client/recipes/service.rb*
+- **chef** :hocho: knife cookbook upload chef-client
+
+> Will fail with dependence to cron
+
+- **chef** :hocho: [manual] knife cookbook site download cron
+- **chef** :hocho: [manual] tar -zxvf cron*.tar.gz -C cookbooks
+- **chef** :hocho: knife cookbook upload cron
+- **chef** :hocho: knife cookbook upload chef-client
+
+> Will fail with dependence to log rotate
+
+- **chef** :hocho: knife cookbook site download logrotate
+- **chef** :hocho: tar -zxvf logrotate*.tar.gz -C cookbooks
+- **chef** :hocho: knife cookbook site download windows
+- **chef** :hocho: tar -zxvf windows*.tar.gz -C cookbooks
+- **chef** :hocho: knife cookbook site download chef_handler
+- **chef** :hocho: tar -zxvf chef_handler*.tar.gz -C cookbooks
+- **chef** :hocho: knife cookbook upload logrotate
+- **chef** :hocho: knife cookbook upload chef_handler
+- **chef** :hocho: knife cookbook upload windows
+- **chef** :hocho: knife cookbook upload chef-client
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+
+> Finally, it will delete the validation pem
+
+- **chef** :hocho: knife cookbook site download ntp
+- **chef** :hocho: tar -zxvf ntp*.tar.gz -C cookbooks/
+- **chef** :hocho: knife cookbook upload ntp
+- **chef** :hocho: [manual] Edit the role *roles/base.rb*
+
+```ruby
+...
+run_list "recipe[chef-client::delete_validation]", "recipe[chef-client]", "recipe[motd]", "recipe[users]"
+```
+
+- **chef** :hocho: knife role from file base.rb
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+
+> Cool, finally done
+
+
+
+
+### 13th Working chef
+
+Just read the pdf XD
 
 
 
@@ -369,10 +558,11 @@ config.vm.provision :shell, :inline => "sudo rm /etc/localtime && sudo ln -s /us
  - **node** :stew: vagrant up
  - **node** :stew: new_ip=$(vagrant ssh -c "ip address show eth1 | grep 'inet ' | sed -e 's/^.*inet //' -e 's/\/.*$//'")
  - **node** :stew: ssh-keygen -R ${new_ip//[^([:alnum:]|\.)]/}
- - **chef** :hocho: [manual] Drop the node at the chef manager
+ - **chef** :hocho: knife node delete node1
  - **chef** :hocho: (cd ../chef-repo;knife bootstrap $new_ip --sudo -x vagrant -P vagrant -N "node1")
- - **chef** :hocho: knife node run_list add node1 "recipe[apache]"
- - **chef** :hocho: knife node run_list add node1 "recipe[motd]"
- - **chef** :hocho: knife node run_list add node1 "recipe[apache::ip-logger]"
- - **node** :stew: [inside node as root] echo 'log_level :info' >> /etc/chef/client.rb
+ - **chef** :hocho: knife node run_list add node1 "role[webserver]"
+ - **node** :stew: vagrant ssh -c "sudo sed -i '$ a log_level :info' /etc/chef/client.rb"
  - **node** :stew: vagrant ssh -c "sudo chef-client"
+
+ > You can use the script at node/recreate.sh
+ > - **node** :stew: sh recreate.sh
