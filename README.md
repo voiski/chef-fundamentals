@@ -261,7 +261,94 @@ end
 
 
 
-### 9th Tomorrow
+### 9th User and groups
+- **chef** :hocho: mkdir -p data_bags/users
+- **chef** :hocho: knife data_bag create users
+- **chef** :hocho: Create the file *data_bags/users/bobo.json*
+
+```json
+{
+  "id": "bobo",
+  "comment": "Bobo T. Chown",
+  "uid": 2000,
+  "gid": 0,
+  "home": "/home/bobo",
+  "shell": "/bin/bash"
+}
+```
+
+- **chef** :hocho: knife data_bag from file users bobo.json
+- **chef** :hocho: Create the file *data_bags/users/frank.json*
+
+```json
+{
+  "id": "frank",
+  "comment": "Frank Belson",
+  "uid": 2001,
+  "gid": 0,
+  "home": "/home/frank",
+  "shell": "/bin/bash"
+}
+```
+
+- **chef** :hocho: knife data_bag from file users frank.json
+- **chef** :hocho: knife search users '*:*'
+- **chef** :hocho: knife search users 'id:bobo' -a shell
+- **chef** :hocho: mkdir -p data_bags/groups
+- **chef** :hocho: knife data_bag create groups
+- **chef** :hocho: Create the file *data_bags/groups/clowns.json*
+
+```json
+{
+  "id": "clowns",
+  "gid": 3000,
+  "members": ["bobo","frank"]
+}
+```
+
+- **chef** :hocho: knife data_bag from file groups clowns.json
+- **chef** :hocho: knife search groups '*:*'
+- **chef** :hocho: knife cookbook create users
+- **chef** :hocho: [manual] Edit the recipe *users/recipes/default.rb*
+
+```ruby
+search('users', '*:*').each do |user_data|
+  user user_data['id'] do
+    comment user_data['comment']
+    uid user_data['uid']
+    gid user_data['gid']
+    home user_data['home']
+    shell user_data['shell']
+  end
+end
+
+include_recipe 'users::groups'
+```
+
+- **chef** :hocho: [manual] Create a new recipe *users/recipes/groups.rb*
+
+```ruby
+search('groups', '*:*').each do |group_data|
+  group group_data['id'] do
+    gid group_data['gid']
+    members group_data['members']
+  end
+end
+```
+
+- **chef** :hocho: knife cookbook upload users
+- **chef** :hocho: knife node run_list add node1 "recipe[users]"
+- **node** :stew: vagrant ssh -c "sudo chef-client"
+- **node** :stew: vagrant ssh -c "cat /etc/group | grep clowns"
+- **node** :stew: vagrant ssh -c "cat /etc/passwd | grep 200"
+
+
+
+
+### 10th Role-based Attributes and Merge Order Precedence
+
+
+
 
 
 
@@ -286,6 +373,6 @@ config.vm.provision :shell, :inline => "sudo rm /etc/localtime && sudo ln -s /us
  - **chef** :hocho: (cd ../chef-repo;knife bootstrap $new_ip --sudo -x vagrant -P vagrant -N "node1")
  - **chef** :hocho: knife node run_list add node1 "recipe[apache]"
  - **chef** :hocho: knife node run_list add node1 "recipe[motd]"
-- **chef** :hocho: knife node run_list add node1 "recipe[apache::ip-logger]"
+ - **chef** :hocho: knife node run_list add node1 "recipe[apache::ip-logger]"
  - **node** :stew: [inside node as root] echo 'log_level :info' >> /etc/chef/client.rb
  - **node** :stew: vagrant ssh -c "sudo chef-client"
